@@ -1013,7 +1013,7 @@ Some("peers" | "list") => {
         let online = peer.last_reg_time.elapsed().as_millis() < REG_TIMEOUT as u128;
 
         let info = &peer.info;            // короче ссылаться
-        let _ = writeln!(
+        writeln!(
             res,
             "ID: {}\n  Host: {}\n  User: {}\n  Platform: {}\n  Version: {}\n  OS: {}\n  Online: {}\n",
             id,
@@ -1023,7 +1023,7 @@ Some("peers" | "list") => {
             if info.version .is_empty() { "<unknown>" } else { &info.version  },
             if info.os       .is_empty() { "<unknown>" } else { &info.os       },
             if online { "Yes" } else { "No" },
-        )?;
+        );
     }
 }
 

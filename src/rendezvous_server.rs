@@ -11,7 +11,7 @@ use hbb_common::{
     futures_util::{sink::SinkExt, stream::{SplitSink, StreamExt}},
     log,
     protobuf::{Message as _, MessageField},
-    rendezvous_proto::{PeerDiscovery, *},
+    rendezvous_proto::{register_pk_response::Result::*, PeerDiscovery, *},
     tcp::{listen_any, FramedStream},
     timeout,
     tokio::{self, io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}, sync::{mpsc, Mutex}, time::{interval, Duration}},

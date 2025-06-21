@@ -368,7 +368,7 @@ impl RendezvousServer {
                                     "Peer {} uuid mismatch: {:?} vs {:?}",
                                     id,
                                     rk.uuid,
-                                    hex::encode(&peer.uuid)
+                                    peer.uuid
                                 );
                                 drop(peer);
                                 return send_rk_res(socket, addr, UUID_MISMATCH).await;

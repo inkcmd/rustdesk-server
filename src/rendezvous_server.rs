@@ -25,6 +25,9 @@ use sodiumoxide::crypto::sign;
 use std::{collections::HashMap, net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, sync::atomic::{AtomicBool, AtomicUsize, Ordering}, sync::{Arc, RwLock}, time::Instant};
 use hex;
 
+lazy_static::lazy_static! {
+    static ref ADDR2ID: RwLock<HashMap<SocketAddr, String>> = RwLock::new(HashMap::new());
+}
 
 lazy_static::lazy_static! {
     static ref PEER_DISCOVERY: RwLock<HashMap<String, PeerDiscovery>> = RwLock::new(HashMap::new());
@@ -318,6 +321,7 @@ impl RendezvousServer {
                 Some(rendezvous_message::Union::RegisterPeer(rp)) => {
                     // B registered
                     if !rp.id.is_empty() {
+                        ADDR2ID.write().unwrap().insert(addr, rp.id.clone());
                         log::trace!("New peer registered: {:?} {:?}", &rp.id, &addr);
                         self.update_addr(rp.id, addr, socket).await?;
                         if self.inner.serial > rp.serial {

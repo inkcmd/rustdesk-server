@@ -1,5 +1,6 @@
 use async_speed_limit::Limiter;
 use async_trait::async_trait;
+use crate::rendezvous_server::ADDR2ID;
 use hbb_common::{
     allow_err, bail,
     bytes::{Bytes, BytesMut},
@@ -364,6 +365,10 @@ async fn handle_connection(
     ws: bool,
 ) {
     let ip = hbb_common::try_into_v4(addr).ip();
+    let initiator_id_opt = {
+    let map = ADDR2ID.read().unwrap();
+    map.get(&addr).cloned()
+};
     if !ws && ip.is_loopback() {
         let limiter = limiter.clone();
         tokio::spawn(async move {

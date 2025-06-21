@@ -30,11 +30,6 @@ lazy_static::lazy_static! {
     static ref PEER_DISCOVERY: RwLock<HashMap<String, PeerDiscovery>> = RwLock::new(HashMap::new());
 }
 
-
-lazy_static::lazy_static! {
-    static ref PEER_DISCOVERY: RwLock<HashMap<String, PeerDiscovery>> = RwLock::new(HashMap::new());
-}
-
 #[derive(Clone, Debug)]
 enum Data {
     Msg(Box<RendezvousMessage>, SocketAddr),
@@ -320,15 +315,6 @@ impl RendezvousServer {
                     }
                 }
 
-                Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
-    if !pd.id.is_empty() {
-        log::info!(
-            "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
-            pd.id, pd.hostname, pd.username, pd.platform, pd.misc
-        );
-        PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd);
-    }
-}
                 Some(rendezvous_message::Union::RegisterPeer(rp)) => {
                     // B registered
                     if !rp.id.is_empty() {
@@ -507,36 +493,6 @@ impl RendezvousServer {
                     return true;
                 }
 
-                Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
-                    if !pd.id.is_empty() {
-                        log::info!(
-                            "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
-                            pd.id, pd.hostname, pd.username, pd.platform, pd.misc
-                        );
-                        PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd);
-                    }
-                }
-
-                Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
-                    if !pd.id.is_empty() {
-                        log::info!(
-                            "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
-                            pd.id, pd.hostname, pd.username, pd.platform, pd.misc
-                        );
-                        PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd);
-                    }
-                }
-
-                Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
-    if !pd.id.is_empty() {
-        log::info!(
-            "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
-            pd.id, pd.hostname, pd.username, pd.platform, pd.misc
-        );
-        PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd);
-    }
-    return true;
-}
                 Some(rendezvous_message::Union::PunchHoleRequest(ph)) => {
                     // there maybe several attempt, so sink can be none
                     if let Some(sink) = sink.take() {

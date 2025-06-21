@@ -2,6 +2,7 @@
 
 use crate::common::*;
 use crate::peer::*;
+use std::collections::HashSet;  
 use hbb_common::{
     allow_err, bail,
     bytes::{Bytes, BytesMut},
@@ -506,50 +507,51 @@ impl RendezvousServer {
                     return true;
                 }
                 Some(rendezvous_message::Union::RequestRelay(mut rf)) => {
-                    let mut id = rf.id.clone();
-let mut token: Option<String> = None;
-if let Some((real_id, tok)) = rf.id.split_once('/') {
-    id = real_id.to_string();
-    token = Some(tok.to_string());
-}
+    // 1. Определяем ID инициатора по IP-адресу
+    let initiator_id_opt = {
+        let map = ADDR2ID.read().unwrap();
+        map.get(&addr).cloned()
+    };
 
-// Загрузка allowlist
-let allowlist_path = "/opt/rustdesk/outgoing_allowlist.txt";
-let allowlist = std::fs::read_to_string(allowlist_path)
-    .unwrap_or_default()
-    .lines()
-    .map(|x| x.trim().to_string())
-    .collect::<std::collections::HashSet<_>>();
+    // 2. Загружаем allow-list
+    let allowed_ids: HashSet<String> = std::fs::read_to_string(
+        "/opt/rustdesk/outgoing_allowlist.txt"
+    ).unwrap_or_default()
+     .lines()
+     .map(|x| x.trim().to_string())
+     .collect();
 
-// Проверка allowlist или токена
-if !allowlist.contains(&id) {
-    let token_file = std::fs::read_to_string("/opt/rustdesk/temp_token.txt").unwrap_or_default();
-    let valid_tokens: std::collections::HashSet<_> = token_file.lines().map(|x| x.trim()).collect();
-    if let Some(tok) = token {
-        if !valid_tokens.contains(tok.as_str()) {
-            log::warn!("Invalid token attempt from ID: {}", id);
-            return true;
+    // 3. Фильтруем
+    match initiator_id_opt {
+        Some(ref id) if allowed_ids.contains(id) => {
+            // ✔ инициатор разрешён
         }
-        log::info!("Temporary token accepted for ID: {}", id);
-    } else {
-        log::warn!("Blocked outgoing connection from ID without token: {}", id);
-        return true;
+        Some(id) => {
+            log::warn!("Blocked outgoing connection from unauthorized initiator ID: {}", id);
+            return true;            // Отвергаем запрос
+        }
+        None => {
+            log::warn!("Initiator ID unknown for addr {}, denying", addr);
+            return true;            // Нет ID — тоже отказ
+        }
     }
+
+    // 5. Сохраняем sink, чтобы потом отправлять TCP-ответы
+    if let Some(s) = sink.take() {
+        self.tcp_punch.lock().await.insert(try_into_v4(addr), s);
+    }
+
+    // 6. Пересылаем запрос целевому пиру, если он онлайн
+    if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
+        let mut msg_out = RendezvousMessage::new();
+        rf.socket_addr = AddrMangle::encode(addr).into();
+        msg_out.set_request_relay(rf);
+        let peer_addr = peer.read().await.socket_addr;
+        self.tx.send(Data::Msg(msg_out.into(), peer_addr)).ok();
+    }
+
+    return true;      // ветка обработана
 }
-rf.id = id; // Убираем токен из ID
-                    // there maybe several attempt, so sink can be none
-                    if let Some(sink) = sink.take() {
-                        self.tcp_punch.lock().await.insert(try_into_v4(addr), sink);
-                    }
-                    if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
-                        let mut msg_out = RendezvousMessage::new();
-                        rf.socket_addr = AddrMangle::encode(addr).into();
-                        msg_out.set_request_relay(rf);
-                        let peer_addr = peer.read().await.socket_addr;
-                        self.tx.send(Data::Msg(msg_out.into(), peer_addr)).ok();
-                    }
-                    return true;
-                }
                 Some(rendezvous_message::Union::RelayResponse(mut rr)) => {
                     let addr_b = AddrMangle::decode(&rr.socket_addr);
                     rr.socket_addr = Default::default();

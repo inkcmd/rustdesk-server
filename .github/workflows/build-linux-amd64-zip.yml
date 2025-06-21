@@ -1,0 +1,50 @@
+name: build-linux-amd64-zip
+on:
+  workflow_dispatch:
+  push:
+    tags: [ 'v*', '*.*.*' ]          # запускается при пуше тегов, как раньше
+
+jobs:
+  build-zip:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: recursive
+          fetch-depth: 0
+      - name: Init submodules
+        run: git submodule update --init --recursive
+
+      # ───────── Rust ─────────
+      - name: Install toolchain
+        uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+          override: true
+          default: true
+          profile: minimal
+          target: x86_64-unknown-linux-musl            # linux/amd64
+
+      - name: Build
+        uses: actions-rs/cargo@v1
+        with:
+          command: build
+          args: --release --all-features --target=x86_64-unknown-linux-musl
+          use-cross: true        # musl требует cross
+
+      # ───────── Пакуем ZIP ─────────
+      - name: Make binaries executable
+        run: chmod -v a+x target/x86_64-unknown-linux-musl/release/*
+
+      - name: Create zip
+        run: |
+          mkdir dist
+          cp target/x86_64-unknown-linux-musl/release/{hbbs,hbbr,rustdesk-utils} dist/
+          cd dist && zip -9 -r rustdesk-server-linux-amd64.zip *
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rustdesk-server-linux-amd64.zip
+          path: dist/rustdesk-server-linux-amd64.zip
+          if-no-files-found: error

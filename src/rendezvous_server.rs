@@ -1,5 +1,3 @@
-// ПОЛНЫЙ ФАЙЛ rendezvous_server.rs СО ВСЕМИ ИСПРАВЛЕНИЯМИ
-
 use crate::common::*;
 use crate::peer::*;
 use std::collections::HashSet;  

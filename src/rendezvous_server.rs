@@ -313,7 +313,8 @@ impl RendezvousServer {
                             "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
                             pd.id, pd.hostname, pd.username, pd.platform, pd.misc
                         );
-                        PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd);
+                        let pd_clone = pd.clone();   // ① делаем копию
+PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd_clone);
                         if let Some(lock) = self.pm.get_in_memory(&pd.id).await {
     let mut p = lock.write().await;
 
@@ -502,7 +503,8 @@ impl RendezvousServer {
                             "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
                             pd.id, pd.hostname, pd.username, pd.platform, pd.misc
                         );
-                        PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd);
+                        let pd_clone = pd.clone();   // ① делаем копию
+PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd_clone);
                         if let Some(lock) = self.pm.get_in_memory(&pd.id).await {
     let mut p = lock.write().await;
 
@@ -1011,7 +1013,7 @@ Some("peers" | "list") => {
         let online = peer.last_reg_time.elapsed().as_millis() < REG_TIMEOUT as u128;
 
         let info = &peer.info;            // короче ссылаться
-        writeln!(
+        let _ = writeln!(
             res,
             "ID: {}\n  Host: {}\n  User: {}\n  Platform: {}\n  Version: {}\n  OS: {}\n  Online: {}\n",
             id,

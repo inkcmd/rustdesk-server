@@ -25,6 +25,12 @@ use sodiumoxide::crypto::sign;
 use std::{collections::HashMap, net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, sync::atomic::{AtomicBool, AtomicUsize, Ordering}, sync::{Arc, RwLock}, time::Instant};
 use hex;
 
+
+lazy_static::lazy_static! {
+    static ref PEER_DISCOVERY: RwLock<HashMap<String, PeerDiscovery>> = RwLock::new(HashMap::new());
+}
+
+
 lazy_static::lazy_static! {
     static ref PEER_DISCOVERY: RwLock<HashMap<String, PeerDiscovery>> = RwLock::new(HashMap::new());
 }
@@ -305,6 +311,16 @@ impl RendezvousServer {
         if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(bytes) {
             match msg_in.union {
                 Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
+                    if !pd.id.is_empty() {
+                        log::info!(
+                            "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
+                            pd.id, pd.hostname, pd.username, pd.platform, pd.misc
+                        );
+                        PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd);
+                    }
+                }
+
+                Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
     if !pd.id.is_empty() {
         log::info!(
             "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
@@ -480,6 +496,37 @@ impl RendezvousServer {
     ) -> bool {
         if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(bytes) {
             match msg_in.union {
+                Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
+                    if !pd.id.is_empty() {
+                        log::info!(
+                            "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
+                            pd.id, pd.hostname, pd.username, pd.platform, pd.misc
+                        );
+                        PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd);
+                    }
+                    return true;
+                }
+
+                Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
+                    if !pd.id.is_empty() {
+                        log::info!(
+                            "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
+                            pd.id, pd.hostname, pd.username, pd.platform, pd.misc
+                        );
+                        PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd);
+                    }
+                }
+
+                Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
+                    if !pd.id.is_empty() {
+                        log::info!(
+                            "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
+                            pd.id, pd.hostname, pd.username, pd.platform, pd.misc
+                        );
+                        PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd);
+                    }
+                }
+
                 Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
     if !pd.id.is_empty() {
         log::info!(
@@ -974,33 +1021,32 @@ rf.id = id; // Убираем токен из ID
                 }
             }
 Some("peers" | "list") => {
-    use std::fmt::Write as _;
+                use std::fmt::Write as _;
 
-    let peers = self.pm.dump_all().await;
-    res = format!("{} peers:\n", peers.len());
-    for (id, peer) in peers {
-        let peer = peer.read().await;
-        let online = peer.last_reg_time.elapsed().as_millis() < REG_TIMEOUT as u128;
-        let pd = PEER_DISCOVERY.read().unwrap().get(&id);
+                let peers = self.pm.dump_all().await;
+                res = format!("{} peers:\n", peers.len());
+                for (id, peer) in peers {
+                    let peer = peer.read().await;
+                    let online = peer.last_reg_time.elapsed().as_millis() < REG_TIMEOUT as u128;
+                    let pd = PEER_DISCOVERY.read().unwrap().get(&id);
 
-        let _ = writeln!(
-            res,
-            "ID: {}\n  UUID: {}\n  Host: {}\n  Local IP: {}\n  External Addr: {}\n  OS: {} {}\n  Version: {}\n  Online: {}\n  PublicKey Present: {}\n  User: {}\n  Platform: {}\n  Misc: {}\n",
-            id,
-            hex::encode(&peer.uuid),
-            pd.map(|x| x.hostname.as_str()).unwrap_or("<unknown>"),
-            peer.info.ip,
-            peer.socket_addr,
-            pd.map(|x| x.platform.as_str()).unwrap_or("<unknown>"),
-            peer.info.os,
-            pd.map(|x| x.version.as_str()).unwrap_or(peer.info.version.as_str()),
-            if online { "Yes" } else { "No" },
-            if peer.pk.is_empty() { "No" } else { "Yes" },
-            pd.map(|x| x.username.as_str()).unwrap_or("<unknown>"),
-            pd.map(|x| x.platform.as_str()).unwrap_or("<unknown>"),
-            pd.map(|x| x.misc.as_str()).unwrap_or("")
-        );
-    }
+                    let _ = writeln!(
+                        res,
+                        "ID: {}\n  UUID: {}\n  Host: {}\n  Local IP: {}\n  External Addr: {}\n  OS: {}\n  Version: {}\n  Online: {}\n  PublicKey Present: {}\n  User: {}\n  Platform: {}\n  Misc: {}\n",
+                        id,
+                        hex::encode(&peer.uuid),
+                        pd.map(|x| x.hostname.as_str()).unwrap_or("<unknown>"),
+                        peer.info.ip,
+                        peer.socket_addr,
+                        peer.info.os,
+                        pd.map(|x| x.misc.as_str()).unwrap_or(peer.info.version.as_str()),
+                        if online { "Yes" } else { "No" },
+                        if peer.pk.is_empty() { "No" } else { "Yes" },
+                        pd.map(|x| x.username.as_str()).unwrap_or("<unknown>"),
+                        pd.map(|x| x.platform.as_str()).unwrap_or("<unknown>"),
+                        pd.map(|x| x.misc.as_str()).unwrap_or("")
+                    );
+                }
 }
 
             Some("ip-blocker" | "ib") => {

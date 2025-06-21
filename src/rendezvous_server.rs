@@ -314,6 +314,17 @@ impl RendezvousServer {
                             pd.id, pd.hostname, pd.username, pd.platform, pd.misc
                         );
                         PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd);
+                        if let Some(lock) = self.pm.get_in_memory(&pd.id).await {
+    let mut p = lock.write().await;
+
+    if !pd.hostname.is_empty()  { p.info.hostname = pd.hostname.clone(); }
+    if !pd.username.is_empty()  { p.info.platform = pd.username.clone(); }   // username сохраняем сюда
+    if !pd.platform.is_empty()  { p.info.platform = pd.platform.clone(); }
+    if !pd.misc.is_empty()      { p.info.version  = pd.misc.clone(); }       // чаще всего версия/alias
+
+    // JSON-строка peer.info обновлена только в памяти — БД трогать не нужно,
+    // достаточно для вывода в консоли.
+}
                     }
                 }
 
@@ -492,6 +503,17 @@ impl RendezvousServer {
                             pd.id, pd.hostname, pd.username, pd.platform, pd.misc
                         );
                         PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd);
+                        if let Some(lock) = self.pm.get_in_memory(&pd.id).await {
+    let mut p = lock.write().await;
+
+    if !pd.hostname.is_empty()  { p.info.hostname = pd.hostname.clone(); }
+    if !pd.username.is_empty()  { p.info.platform = pd.username.clone(); }   // username сохраняем сюда
+    if !pd.platform.is_empty()  { p.info.platform = pd.platform.clone(); }
+    if !pd.misc.is_empty()      { p.info.version  = pd.misc.clone(); }       // чаще всего версия/alias
+
+    // JSON-строка peer.info обновлена только в памяти — БД трогать не нужно,
+    // достаточно для вывода в консоли.
+}
                     }
                     return true;
                 }
@@ -981,33 +1003,26 @@ impl RendezvousServer {
                 }
             }
 Some("peers" | "list") => {
-                use std::fmt::Write as _;
+    use std::fmt::Write as _;
 
-                let peers = self.pm.dump_all().await;
-                res = format!("{} peers:\n", peers.len());
-                for (id, peer) in peers {
-                    let peer = peer.read().await;
-                    let online = peer.last_reg_time.elapsed().as_millis() < REG_TIMEOUT as u128;
-                    let pd_guard = PEER_DISCOVERY.read().unwrap();
-                    let pd = pd_guard.get(&id);
+    let peers = self.pm.dump_all().await;
+    for (id, peer) in peers {
+        let peer = peer.read().await;
+        let online = peer.last_reg_time.elapsed().as_millis() < REG_TIMEOUT as u128;
 
-                    let _ = writeln!(
-                        res,
-                        "ID: {}\n  UUID: {}\n  Host: {}\n  Local IP: {}\n  External Addr: {}\n  OS: {}\n  Version: {}\n  Online: {}\n  PublicKey Present: {}\n  User: {}\n  Platform: {}\n  Misc: {}\n",
-                        id,
-                        hex::encode(&peer.uuid),
-                        pd.map(|x| x.hostname.as_str()).unwrap_or("<unknown>"),
-                        peer.info.ip,
-                        peer.socket_addr,
-                        peer.info.os,
-                        pd.map(|x| x.misc.as_str()).unwrap_or(peer.info.version.as_str()),
-                        if online { "Yes" } else { "No" },
-                        if peer.pk.is_empty() { "No" } else { "Yes" },
-                        pd.map(|x| x.username.as_str()).unwrap_or("<unknown>"),
-                        pd.map(|x| x.platform.as_str()).unwrap_or("<unknown>"),
-                        pd.map(|x| x.misc.as_str()).unwrap_or("")
-                    );
-                }
+        let info = &peer.info;            // короче ссылаться
+        writeln!(
+            res,
+            "ID: {}\n  Host: {}\n  User: {}\n  Platform: {}\n  Version: {}\n  OS: {}\n  Online: {}\n",
+            id,
+            if info.hostname.is_empty() { "<unknown>" } else { &info.hostname },
+            if info.platform.is_empty() { "<unknown>" } else { &info.platform },   // username (сохранили выше)
+            if info.platform.is_empty() { "<unknown>" } else { &info.platform },
+            if info.version .is_empty() { "<unknown>" } else { &info.version  },
+            if info.os       .is_empty() { "<unknown>" } else { &info.os       },
+            if online { "Yes" } else { "No" },
+        )?;
+    }
 }
 
             Some("ip-blocker" | "ib") => {

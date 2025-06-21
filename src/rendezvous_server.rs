@@ -984,7 +984,8 @@ Some("peers" | "list") => {
                 for (id, peer) in peers {
                     let peer = peer.read().await;
                     let online = peer.last_reg_time.elapsed().as_millis() < REG_TIMEOUT as u128;
-                    let pd = PEER_DISCOVERY.read().unwrap().get(&id);
+                    let pd_guard = PEER_DISCOVERY.read().unwrap();
+                    let pd = pd_guard.get(&id)
 
                     let _ = writeln!(
                         res,

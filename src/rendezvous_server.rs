@@ -310,7 +310,7 @@ impl RendezvousServer {
             match msg_in.union {
                 Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
     if pd.id.is_empty() {
-        return true;                       // ID пуст – игнори­руем
+        return Ok(());                       // ID пуст – игнори­руем
     }
 
     // 1. лог
@@ -554,7 +554,7 @@ impl RendezvousServer {
         */
     }
 
-    return Ok(());                            // остаёмся в том же соединении
+    return true;                            // остаёмся в том же соединении
 }
 
 

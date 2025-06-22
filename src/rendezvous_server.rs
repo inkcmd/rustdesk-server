@@ -1,7 +1,8 @@
 // wdawd
 use crate::common::*;
 use crate::peer::*;
-use std::collections::HashSet;  
+use std::collections::HashSet;
+use std::time::{Duration, Instant};
 use hbb_common::{
     allow_err, bail,
     bytes::{Bytes, BytesMut},
@@ -22,8 +23,31 @@ use hbb_common::{
 };
 use ipnetwork::Ipv4Network;
 use sodiumoxide::crypto::sign;
-use std::{collections::HashMap, net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, sync::atomic::{AtomicBool, AtomicUsize, Ordering}, sync::{Arc, RwLock}, time::Instant};
+use std::{
+    collections::{HashMap, HashSet},
+    net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
+    sync::{
+        atomic::{AtomicBool, AtomicUsize, Ordering},
+        Arc, RwLock,
+    },
+    time::{Duration, Instant},
+};
 use hex;
+
+lazy_static::lazy_static! {
+    /// id  →  истекает в Instant
+    static ref ALLOW_ONCE: RwLock<HashMap<String, Instant>> = RwLock::new(HashMap::new());
+}
+/// true, если запись существовала и ещё действительна; запись сразу удаляется
+fn consume_allow_once(id: &str) -> bool {
+    let mut map = ALLOW_ONCE.write().unwrap();
+    if let Some(exp) = map.remove(id) {
+        if Instant::now() <= exp {
+            return true;               // пускаем
+        }
+    }
+    false                                // нет или уже просрочено
+}
 
 lazy_static::lazy_static! {
     static ref ADDR2ID: RwLock<HashMap<String, String>> = RwLock::new(HashMap::new()); // ip -> id
@@ -589,19 +613,24 @@ impl RendezvousServer {
         .get(&ip_key)
         .cloned();                   // Option<String>
 
-    // 2. Проверяем по ALLOWLIST
-    if let Some(initiator) = initiator_id_opt {
-        if !ALLOWLIST.read().unwrap().contains(&initiator) {
-            log::warn!(
-                "Blocked outgoing connection from unauthorized initiator ID: {}",
-                initiator
-            );
-            return true;          // рвём TCP-сеанс
-        }
-    } else {
-        log::warn!("Initiator unknown for {}, denying", ip_key);
-        return true;
+// 2. Проверяем по ALLOWLIST *или* одноразовому allow-once
+if let Some(initiator) = initiator_id_opt {
+    let allowed = {
+        let list_ok   = ALLOWLIST.read().unwrap().contains(&initiator);
+        let once_ok   = consume_allow_once(&initiator);   // «съедает» запись
+        list_ok || once_ok
+    };
+
+    if !allowed {
+        log::warn!(
+            "Blocked outgoing connection: initiator {initiator} not allowed"
+        );
+        return true;                 // рвём TCP-сеанс
     }
+} else {
+    log::warn!("Initiator unknown for {ip_key}, denying");
+    return true;
+}
 
     /* ---------- 4. сохраняем Sink, чтобы потом послать ответ ---------- */
     if let Some(s) = sink.take() {
@@ -814,41 +843,49 @@ impl RendezvousServer {
         .get(&ip_key)
         .cloned();                     // Option<String>
 
-    // 2. проверяем, разрешён ли этот ID
-    if let Some(init_id) = initiator_opt {
-        if !ALLOWLIST.read().unwrap().contains(&init_id) {
-            log::warn!("PunchHole denied: initiator {init_id} not in allow-list");
+/* ---------- проверка инициатора ---------- */
+if let Some(init_id) = initiator_opt {
+    let allowed = {
+        let list_ok = ALLOWLIST.read().unwrap().contains(&init_id);
+        let once_ok = consume_allow_once(&init_id);   // «съедает» запись
+        list_ok || once_ok
+    };
 
-            let mut deny = RendezvousMessage::new();
-            deny.set_punch_hole_response(PunchHoleResponse {
-                failure: punch_hole_response::Failure::OFFLINE.into(),
-                ..Default::default()
-            });
+    if !allowed {
+        log::warn!("PunchHole denied: initiator {init_id} not allowed");
 
-            if ws {
-                // TCP-ветка
-                self.send_to_tcp_sync(deny, addr).await.ok();
-            } else {
-                // UDP-ветка
-                self.tx.send(Data::Msg(deny.into(), addr)).ok();
-            }
-            return Ok((RendezvousMessage::new(), None));
-        }
-    } else {
-        log::warn!("PunchHole denied: unknown initiator {}", ip_key);
         let mut deny = RendezvousMessage::new();
         deny.set_punch_hole_response(PunchHoleResponse {
             failure: punch_hole_response::Failure::OFFLINE.into(),
             ..Default::default()
         });
+
         if ws {
+            // TCP-ветка
             self.send_to_tcp_sync(deny, addr).await.ok();
         } else {
+            // UDP-ветка
             self.tx.send(Data::Msg(deny.into(), addr)).ok();
         }
         return Ok((RendezvousMessage::new(), None));
     }
-    /* ---------- КОНЕЦ вставки ---------- */
+} else {
+    log::warn!("PunchHole denied: unknown initiator {ip_key}");
+
+    let mut deny = RendezvousMessage::new();
+    deny.set_punch_hole_response(PunchHoleResponse {
+        failure: punch_hole_response::Failure::OFFLINE.into(),
+        ..Default::default()
+    });
+
+    if ws {
+        self.send_to_tcp_sync(deny, addr).await.ok();
+    } else {
+        self.tx.send(Data::Msg(deny.into(), addr)).ok();
+    }
+    return Ok((RendezvousMessage::new(), None));
+}
+/* ---------- конец проверки инициатора ---------- */
 
         let id = ph.id;
         // punch hole request from A, relay to B,
@@ -1097,6 +1134,14 @@ impl RendezvousServer {
                     }
                 }
             }
+            Some("allow-once" | "ao") => {
+    if let Some(id) = fds.next() {
+        let mins = fds.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(2);
+        let expiry = Instant::now() + Duration::from_secs(mins * 60);
+        ALLOW_ONCE.write().unwrap().insert(id.to_owned(), expiry);
+        let _ = writeln!(res, "{id} allowed for {mins} min");
+    }
+}
                 /* ────────── горячая перезагрузка allow-list ────────── */
     Some("reload-allowlist" | "ral") => {
         // перечитать файл

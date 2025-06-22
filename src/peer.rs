@@ -46,7 +46,11 @@ pub(crate) struct PeerInfo {
     pub(crate) version: String,
     #[serde(default)]
     pub(crate) platform: String,
+    // ↓ новое
+    #[serde(default)]
+    pub(crate) username: String,
 }
+
 
 pub(crate) struct Peer {
     pub(crate) socket_addr: SocketAddr,

@@ -344,7 +344,7 @@ impl RendezvousServer {
         */
     }
 
-    return true;                            // остаёмся в том же соединении
+    return Ok(());                           // остаёмся в том же соединении
 }
 
 
@@ -553,7 +553,7 @@ impl RendezvousServer {
         */
     }
 
-    return true;                            // остаёмся в том же соединении
+    return Ok(());                            // остаёмся в том же соединении
 }
 
 

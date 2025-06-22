@@ -26,11 +26,22 @@ use std::{collections::HashMap, net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr}, s
 use hex;
 
 lazy_static::lazy_static! {
-    static ref ADDR2ID: RwLock<HashMap<SocketAddr, String>> = RwLock::new(HashMap::new());
+    static ref ADDR2ID: RwLock<HashMap<String, String>> = RwLock::new(HashMap::new()); // ip -> id
 }
+
 
 lazy_static::lazy_static! {
     static ref PEER_DISCOVERY: RwLock<HashMap<String, PeerDiscovery>> = RwLock::new(HashMap::new());
+}
+
+lazy_static::lazy_static! {
+    static ref ALLOWLIST: RwLock<HashSet<String>> = RwLock::new({
+        std::fs::read_to_string("/opt/rustdesk/outgoing_allowlist.txt")
+            .unwrap_or_default()
+            .lines()
+            .map(|s| s.trim().to_owned())
+            .collect()
+    });
 }
 
 #[derive(Clone, Debug)]
@@ -352,7 +363,10 @@ impl RendezvousServer {
                 Some(rendezvous_message::Union::RegisterPeer(rp)) => {
                     // B registered
                     if !rp.id.is_empty() {
-                        ADDR2ID.write().unwrap().insert(addr, rp.id.clone());
+                        ADDR2ID
+    .write()
+    .unwrap()
+    .insert(addr.ip().to_string(), rp.id.clone());
                         log::trace!("New peer registered: {:?} {:?}", &rp.id, &addr);
                         self.update_addr(rp.id, addr, socket).await?;
                         if self.inner.serial > rp.serial {
@@ -567,50 +581,44 @@ impl RendezvousServer {
                     return true;
                 }
                 Some(rendezvous_message::Union::RequestRelay(mut rf)) => {
-    // 1. Определяем ID инициатора по IP-адресу
-    let initiator_id_opt = {
-        let map = ADDR2ID.read().unwrap();
-        map.get(&addr).cloned()
-    };
+    /* ---------- 1. определяем инициатора по IP ---------- */
+    let ip_key = addr.ip().to_string();
+    let initiator_id_opt = ADDR2ID
+        .read()
+        .unwrap()
+        .get(&ip_key)
+        .cloned();                   // Option<String>
 
-    // 2. Загружаем allow-list
-    let allowed_ids: HashSet<String> = std::fs::read_to_string(
-        "/opt/rustdesk/outgoing_allowlist.txt"
-    ).unwrap_or_default()
-     .lines()
-     .map(|x| x.trim().to_string())
-     .collect();
-
-    // 3. Фильтруем
-    match initiator_id_opt {
-        Some(ref id) if allowed_ids.contains(id) => {
-            // ✔ инициатор разрешён
+    // 2. Проверяем по ALLOWLIST
+    if let Some(initiator) = initiator_id_opt {
+        if !ALLOWLIST.read().unwrap().contains(&initiator) {
+            log::warn!(
+                "Blocked outgoing connection from unauthorized initiator ID: {}",
+                initiator
+            );
+            return true;          // рвём TCP-сеанс
         }
-        Some(id) => {
-            log::warn!("Blocked outgoing connection from unauthorized initiator ID: {}", id);
-            return true;            // Отвергаем запрос
-        }
-        None => {
-            log::warn!("Initiator ID unknown for addr {}, denying", addr);
-            return true;            // Нет ID — тоже отказ
-        }
+    } else {
+        log::warn!("Initiator unknown for {}, denying", ip_key);
+        return true;
     }
 
-    // 5. Сохраняем sink, чтобы потом отправлять TCP-ответы
+    /* ---------- 4. сохраняем Sink, чтобы потом послать ответ ---------- */
     if let Some(s) = sink.take() {
         self.tcp_punch.lock().await.insert(try_into_v4(addr), s);
     }
 
-    // 6. Пересылаем запрос целевому пиру, если он онлайн
+    /* ---------- 5. пересылаем запрос целевому пиру (если онлайн) ---------- */
     if let Some(peer) = self.pm.get_in_memory(&rf.id).await {
+        let peer_addr = peer.read().await.socket_addr;
+
         let mut msg_out = RendezvousMessage::new();
         rf.socket_addr = AddrMangle::encode(addr).into();
-        msg_out.set_request_relay(rf);
-        let peer_addr = peer.read().await.socket_addr;
+        msg_out.set_request_relay(rf);              // кладём модифицированный RF
         self.tx.send(Data::Msg(msg_out.into(), peer_addr)).ok();
     }
 
-    return true;      // ветка обработана
+    return true;   // ветка успешно обработана
 }
                 Some(rendezvous_message::Union::RelayResponse(mut rr)) => {
                     let addr_b = AddrMangle::decode(&rr.socket_addr);
@@ -795,6 +803,53 @@ impl RendezvousServer {
             });
             return Ok((msg_out, None));
         }
+        
+    /* ---------- ВСТАВЛЯЕМ ЗДЕСЬ проверку ALLOW-LIST ---------- */
+
+    // 1. определяем ID инициатора по IP-адресу
+    let ip_key = addr.ip().to_string();
+    let initiator_opt = ADDR2ID
+        .read()
+        .unwrap()
+        .get(&ip_key)
+        .cloned();                     // Option<String>
+
+    // 2. проверяем, разрешён ли этот ID
+    if let Some(init_id) = initiator_opt {
+        if !ALLOWLIST.read().unwrap().contains(&init_id) {
+            log::warn!("PunchHole denied: initiator {init_id} not in allow-list");
+
+            let mut deny = RendezvousMessage::new();
+            deny.set_punch_hole_response(PunchHoleResponse {
+                failure: punch_hole_response::Failure::OFFLINE.into(),
+                ..Default::default()
+            });
+
+            if ws {
+                // TCP-ветка
+                self.send_to_tcp_sync(deny, addr).await.ok();
+            } else {
+                // UDP-ветка
+                self.tx.send(Data::Msg(deny.into(), addr)).ok();
+            }
+            return Ok((RendezvousMessage::new(), None));
+        }
+    } else {
+        log::warn!("PunchHole denied: unknown initiator {}", ip_key);
+        let mut deny = RendezvousMessage::new();
+        deny.set_punch_hole_response(PunchHoleResponse {
+            failure: punch_hole_response::Failure::OFFLINE.into(),
+            ..Default::default()
+        });
+        if ws {
+            self.send_to_tcp_sync(deny, addr).await.ok();
+        } else {
+            self.tx.send(Data::Msg(deny.into(), addr)).ok();
+        }
+        return Ok((RendezvousMessage::new(), None));
+    }
+    /* ---------- КОНЕЦ вставки ---------- */
+
         let id = ph.id;
         // punch hole request from A, relay to B,
         // check if in same intranet first,

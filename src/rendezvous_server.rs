@@ -308,26 +308,45 @@ impl RendezvousServer {
         if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(bytes) {
             match msg_in.union {
                 Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
-                    if !pd.id.is_empty() {
-                        log::info!(
-                            "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
-                            pd.id, pd.hostname, pd.username, pd.platform, pd.misc
-                        );
-                        let pd_clone = pd.clone();   // ① делаем копию
-PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd_clone);
-                        if let Some(lock) = self.pm.get_in_memory(&pd.id).await {
-    let mut p = lock.write().await;
+    if pd.id.is_empty() {
+        return true;                       // ID пуст – игнори­руем
+    }
 
-    if !pd.hostname.is_empty()  { p.info.hostname = pd.hostname.clone(); }
-    if !pd.username.is_empty()  { p.info.platform = pd.username.clone(); }   // username сохраняем сюда
-    if !pd.platform.is_empty()  { p.info.platform = pd.platform.clone(); }
-    if !pd.misc.is_empty()      { p.info.version  = pd.misc.clone(); }       // чаще всего версия/alias
+    // 1. лог
+    log::info!(
+        "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
+        pd.id, pd.hostname, pd.username, pd.platform, pd.misc
+    );
 
-    // JSON-строка peer.info обновлена только в памяти — БД трогать не нужно,
-    // достаточно для вывода в консоли.
+    // 2. сохраня­ем копию в глобальный кэш
+    PEER_DISCOVERY
+        .write()
+        .unwrap()
+        .insert(pd.id.clone(), pd.clone());
+
+    // 3. обнов­ляем info в уже загруженном пиру (если он есть в памяти)
+    if let Some(lock) = self.pm.get_in_memory(&pd.id).await {
+        let mut peer = lock.write().await;
+
+        if !pd.hostname.is_empty() { peer.info.hostname = pd.hostname.clone(); }
+        if !pd.username.is_empty() { peer.info.username = pd.username.clone(); }   // <-- добавьте поле в PeerInfo
+        if !pd.platform.is_empty() { peer.info.platform = pd.platform.clone(); }
+        if !pd.misc.is_empty()     { peer.info.version  = pd.misc.clone(); }
+
+        /* 4. если хотите, чтобы переживало рестарт hbbs — раскомментируйте
+        if !peer.guid.is_empty() {
+            // сериализуем info обратно в JSON и пишем в БД
+            let _ = self.pm.db
+                .update_info(&peer.guid,
+                             &serde_json::to_string(&peer.info).unwrap_or_default())
+                .await;
+        }
+        */
+    }
+
+    return true;                            // остаёмся в том же соединении
 }
-                    }
-                }
+
 
                 Some(rendezvous_message::Union::RegisterPeer(rp)) => {
                     // B registered
@@ -497,28 +516,46 @@ PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd_clone);
     ) -> bool {
         if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(bytes) {
             match msg_in.union {
-                Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
-                    if !pd.id.is_empty() {
-                        log::info!(
-                            "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
-                            pd.id, pd.hostname, pd.username, pd.platform, pd.misc
-                        );
-                        let pd_clone = pd.clone();   // ① делаем копию
-PEER_DISCOVERY.write().unwrap().insert(pd.id.clone(), pd_clone);
-                        if let Some(lock) = self.pm.get_in_memory(&pd.id).await {
-    let mut p = lock.write().await;
+      Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
+    if pd.id.is_empty() {
+        return true;                       // ID пуст – игнори­руем
+    }
 
-    if !pd.hostname.is_empty()  { p.info.hostname = pd.hostname.clone(); }
-    if !pd.username.is_empty()  { p.info.platform = pd.username.clone(); }   // username сохраняем сюда
-    if !pd.platform.is_empty()  { p.info.platform = pd.platform.clone(); }
-    if !pd.misc.is_empty()      { p.info.version  = pd.misc.clone(); }       // чаще всего версия/alias
+    // 1. лог
+    log::info!(
+        "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
+        pd.id, pd.hostname, pd.username, pd.platform, pd.misc
+    );
 
-    // JSON-строка peer.info обновлена только в памяти — БД трогать не нужно,
-    // достаточно для вывода в консоли.
+    // 2. сохраня­ем копию в глобальный кэш
+    PEER_DISCOVERY
+        .write()
+        .unwrap()
+        .insert(pd.id.clone(), pd.clone());
+
+    // 3. обнов­ляем info в уже загруженном пиру (если он есть в памяти)
+    if let Some(lock) = self.pm.get_in_memory(&pd.id).await {
+        let mut peer = lock.write().await;
+
+        if !pd.hostname.is_empty() { peer.info.hostname = pd.hostname.clone(); }
+        if !pd.username.is_empty() { peer.info.username = pd.username.clone(); }   // <-- добавьте поле в PeerInfo
+        if !pd.platform.is_empty() { peer.info.platform = pd.platform.clone(); }
+        if !pd.misc.is_empty()     { peer.info.version  = pd.misc.clone(); }
+
+        /* 4. если хотите, чтобы переживало рестарт hbbs — раскомментируйте
+        if !peer.guid.is_empty() {
+            // сериализуем info обратно в JSON и пишем в БД
+            let _ = self.pm.db
+                .update_info(&peer.guid,
+                             &serde_json::to_string(&peer.info).unwrap_or_default())
+                .await;
+        }
+        */
+    }
+
+    return true;                            // остаёмся в том же соединении
 }
-                    }
-                    return true;
-                }
+
 
                 Some(rendezvous_message::Union::PunchHoleRequest(ph)) => {
                     // there maybe several attempt, so sink can be none

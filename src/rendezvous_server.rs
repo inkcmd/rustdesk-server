@@ -481,6 +481,8 @@ impl RendezvousServer {
                         }
                     }
                     if changed {
+                        let id_clone = id.clone();        // для ADDR2ID
+                        let ip_clone = ip.clone();        // для ADDR2ID
                         self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
                         ADDR2ID
     .write()

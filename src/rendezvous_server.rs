@@ -462,15 +462,23 @@ impl RendezvousServer {
                             );
                         }
                     }
-                    if changed {
-                            let id_clone = id.clone();
-    let ip_clone = ip.clone();
-                        self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
-    ADDR2ID
-        .write()
-        .unwrap()
-        .insert(ip_clone, id_clone);
-                    }
+// ---------- RegisterPk: сразу после вычисления `changed` / `ip_changed` ----------
+
+// клоны понадобятся и для update_pk (если он будет вызван), и для карты
+let id_clone = id.clone();
+let ip_clone = ip.clone();
+
+// 1. если действительно что-то изменилось – обновляем запись в базе
+if changed {
+    // передаём клоны, чтобы исходные `id` и `ip` не «съесть»
+    self.pm.update_pk(id_clone.clone(), peer, addr, rk.uuid, rk.pk, ip_clone.clone()).await;
+}
+
+// 2. а запись IP → ID в любом случае должна оказаться в карте
+ADDR2ID
+    .write()
+    .unwrap()
+    .insert(ip_clone, id_clone);
                     let mut msg_out = RendezvousMessage::new();
                     msg_out.set_register_pk_response(RegisterPkResponse {
                         result: register_pk_response::Result::OK.into(),

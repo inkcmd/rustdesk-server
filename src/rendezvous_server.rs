@@ -39,7 +39,7 @@ lazy_static::lazy_static! {
 /// true, если запись существовала и ещё действительна; запись сразу удаляется
 fn consume_allow_once(id: &str) -> bool {
     // ⇓ явно даём понять, что берём метод RwLock::write
-    let mut map = std::sync::RwLock::write(&ALLOW_ONCE).unwrap();
+    let mut map = std::sync::RwLock::write(&*ALLOW_ONCE).unwrap();
     if let Some(exp) = map.remove(id) {
         if Instant::now() <= exp {
             return true;
@@ -52,10 +52,6 @@ lazy_static::lazy_static! {
     static ref ADDR2ID: RwLock<HashMap<String, String>> = RwLock::new(HashMap::new()); // ip -> id
 }
 
-
-lazy_static::lazy_static! {
-    static ref PEER_DISCOVERY: RwLock<HashMap<String, PeerDiscovery>> = RwLock::new(HashMap::new());
-}
 
 lazy_static::lazy_static! {
     static ref ALLOWLIST: RwLock<HashSet<String>> = RwLock::new({
@@ -345,42 +341,13 @@ impl RendezvousServer {
         if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(bytes) {
             match msg_in.union {
                 Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
+                    ADDR2ID
+    .write()
+    .unwrap()
+    .insert(addr.ip().to_string(), pd.id.clone());
     if pd.id.is_empty() {
         return Ok(());                       // ID пуст – игнори­руем
     }
-
-    // 1. лог
-    log::info!(
-        "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
-        pd.id, pd.hostname, pd.username, pd.platform, pd.misc
-    );
-
-    // 2. сохраня­ем копию в глобальный кэш
-    PEER_DISCOVERY
-        .write()
-        .unwrap()
-        .insert(pd.id.clone(), pd.clone());
-
-    // 3. обнов­ляем info в уже загруженном пиру (если он есть в памяти)
-    if let Some(lock) = self.pm.get_in_memory(&pd.id).await {
-        let mut peer = lock.write().await;
-
-        if !pd.hostname.is_empty() { peer.info.hostname = pd.hostname.clone(); }
-        if !pd.username.is_empty() { peer.info.username = pd.username.clone(); }   // <-- добавьте поле в PeerInfo
-        if !pd.platform.is_empty() { peer.info.platform = pd.platform.clone(); }
-        if !pd.misc.is_empty()     { peer.info.version  = pd.misc.clone(); }
-
-        /* 4. если хотите, чтобы переживало рестарт hbbs — раскомментируйте
-        if !peer.guid.is_empty() {
-            // сериализуем info обратно в JSON и пишем в БД
-            let _ = self.pm.db
-                .update_info(&peer.guid,
-                             &serde_json::to_string(&peer.info).unwrap_or_default())
-                .await;
-        }
-        */
-    }
-
     return Ok(());                           // остаёмся в том же соединении
 }
 
@@ -481,8 +448,6 @@ impl RendezvousServer {
                         }
                     }
                     if changed {
-                        let id_clone = id.clone();        // для ADDR2ID
-                        let ip_clone = ip.clone();        // для ADDR2ID
                         self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
                         ADDR2ID
     .write()
@@ -563,42 +528,13 @@ impl RendezvousServer {
         if let Ok(msg_in) = RendezvousMessage::parse_from_bytes(bytes) {
             match msg_in.union {
       Some(rendezvous_message::Union::PeerDiscovery(pd)) => {
+          ADDR2ID
+    .write()
+    .unwrap()
+    .insert(addr.ip().to_string(), pd.id.clone());
     if pd.id.is_empty() {
         return true;                       // ID пуст – игнори­руем
     }
-
-    // 1. лог
-    log::info!(
-        "PeerDiscovery: ID={} Host={} User={} Platform={} Misc={}",
-        pd.id, pd.hostname, pd.username, pd.platform, pd.misc
-    );
-
-    // 2. сохраня­ем копию в глобальный кэш
-    PEER_DISCOVERY
-        .write()
-        .unwrap()
-        .insert(pd.id.clone(), pd.clone());
-
-    // 3. обнов­ляем info в уже загруженном пиру (если он есть в памяти)
-    if let Some(lock) = self.pm.get_in_memory(&pd.id).await {
-        let mut peer = lock.write().await;
-
-        if !pd.hostname.is_empty() { peer.info.hostname = pd.hostname.clone(); }
-        if !pd.username.is_empty() { peer.info.username = pd.username.clone(); }   // <-- добавьте поле в PeerInfo
-        if !pd.platform.is_empty() { peer.info.platform = pd.platform.clone(); }
-        if !pd.misc.is_empty()     { peer.info.version  = pd.misc.clone(); }
-
-        /* 4. если хотите, чтобы переживало рестарт hbbs — раскомментируйте
-        if !peer.guid.is_empty() {
-            // сериализуем info обратно в JSON и пишем в БД
-            let _ = self.pm.db
-                .update_info(&peer.guid,
-                             &serde_json::to_string(&peer.info).unwrap_or_default())
-                .await;
-        }
-        */
-    }
-
     return true;                            // остаёмся в том же соединении
 }
 
@@ -755,7 +691,7 @@ if let Some(initiator) = initiator_id_opt {
         .write()
         .unwrap()
         .insert(socket_addr.ip().to_string(), id.clone());
-    /* -------- конец вставки ------- */
+        
         let mut msg_out = RendezvousMessage::new();
         msg_out.set_register_peer_response(RegisterPeerResponse {
             request_pk,
@@ -1158,7 +1094,7 @@ Some("allow-once" | "ao") => {
             .unwrap_or(2);
         let expiry = Instant::now() + Duration::from_secs(mins * 60);
         // ⇓ то же: явно метод RwLock::write
-        std::sync::RwLock::write(&ALLOW_ONCE).unwrap().insert(id.to_owned(), expiry);
+        std::sync::RwLock::write(&*ALLOW_ONCE).unwrap().insert(id.to_owned(), expiry);
 
         let _ = writeln!(res, "{id} allowed for {mins} min");
     }
@@ -1173,7 +1109,7 @@ Some("reload-allowlist" | "ral") => {
                 .filter(|s| !s.is_empty() && !s.starts_with('#'))
                 .map(str::to_owned)
                 .collect();
-            *ALLOWLIST.write().unwrap() = set;
+            *std::sync::RwLock::write(&*ALLOWLIST).unwrap() = set;
             let _ = writeln!(
                 res,
                 "Allow-list reloaded ({} entries)",
@@ -1186,29 +1122,6 @@ Some("reload-allowlist" | "ral") => {
     }
 },
 /* ------------------------------------------------ */
-Some("peers" | "list") => {
-    use std::fmt::Write as _;
-
-    let peers = self.pm.dump_all().await;
-    for (id, peer) in peers {
-        let peer = peer.read().await;
-        let online = peer.last_reg_time.elapsed().as_millis() < REG_TIMEOUT as u128;
-
-        let info = &peer.info;            // короче ссылаться
-        writeln!(
-            res,
-            "ID: {}\n  Host: {}\n  User: {}\n  Platform: {}\n  Version: {}\n  OS: {}\n  Online: {}\n",
-            id,
-            if info.hostname.is_empty() { "<unknown>" } else { &info.hostname },
-            if info.platform.is_empty() { "<unknown>" } else { &info.platform },   // username (сохранили выше)
-            if info.platform.is_empty() { "<unknown>" } else { &info.platform },
-            if info.version .is_empty() { "<unknown>" } else { &info.version  },
-            if info.os       .is_empty() { "<unknown>" } else { &info.os       },
-            if online { "Yes" } else { "No" },
-        );
-    }
-}
-
             Some("ip-blocker" | "ib") => {
                 let mut lock = IP_BLOCKER.lock().await;
                 lock.retain(|&_, (a, b)| {

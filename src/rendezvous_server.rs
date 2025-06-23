@@ -355,10 +355,10 @@ impl RendezvousServer {
                 Some(rendezvous_message::Union::RegisterPeer(rp)) => {
                     // B registered
                     if !rp.id.is_empty() {
-ADDR2ID
-    .write()
-    .unwrap()
-    .insert(socket_addr.ip().to_string(), id.clone());
+        ADDR2ID
+            .write()
+            .unwrap()
+            .insert(addr.ip().to_string(), rp.id.clone());
                         log::trace!("New peer registered: {:?} {:?}", &rp.id, &addr);
                         self.update_addr(rp.id, addr, socket).await?;
                         if self.inner.serial > rp.serial {
@@ -684,14 +684,10 @@ if let Some(initiator) = initiator_id_opt {
         if let Some(old) = ip_change {
             log::info!("IP change of {} from {} to {}", id, old, socket_addr);
         }
-            /* ---------- ВСТАВКА ---------- */
-    // обновляем карту «IP → ID», чтобы последующие Punch-Hole/Relay-запросы
-    // сразу знали инициатора
-    ADDR2ID
-        .write()
-        .unwrap()
-        .insert(socket_addr.ip().to_string(), id.clone());
-        
+ADDR2ID
+    .write()
+    .unwrap()
+    .insert(socket_addr.ip().to_string(), id.clone());
         let mut msg_out = RendezvousMessage::new();
         msg_out.set_register_peer_response(RegisterPeerResponse {
             request_pk,

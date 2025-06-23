@@ -452,7 +452,7 @@ ADDR2ID
                         ADDR2ID
     .write()
     .unwrap()
-    .insert(ip_clone, id_clone);
+    .insert(ip, id);
                     }
                     let mut msg_out = RendezvousMessage::new();
                     msg_out.set_register_pk_response(RegisterPkResponse {

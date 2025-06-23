@@ -11,7 +11,7 @@ use hbb_common::{
     futures_util::{sink::SinkExt, stream::{SplitSink, StreamExt}},
     log,
     protobuf::{Message as _, MessageField},
-    rendezvous_proto::{register_pk_response::Result::*, PeerDiscovery, *},
+    rendezvous_proto::{register_pk_response::Result::*, *},
     tcp::{listen_any, FramedStream},
     timeout,
     tokio::{self, io::{AsyncReadExt, AsyncWriteExt}, net::{TcpListener, TcpStream}, sync::{mpsc, Mutex}, time::{interval, Duration}},
@@ -355,10 +355,10 @@ impl RendezvousServer {
                 Some(rendezvous_message::Union::RegisterPeer(rp)) => {
                     // B registered
                     if !rp.id.is_empty() {
-                        ADDR2ID
+ADDR2ID
     .write()
     .unwrap()
-    .insert(addr.ip().to_string(), rp.id.clone());
+    .insert(socket_addr.ip().to_string(), id.clone());
                         log::trace!("New peer registered: {:?} {:?}", &rp.id, &addr);
                         self.update_addr(rp.id, addr, socket).await?;
                         if self.inner.serial > rp.serial {

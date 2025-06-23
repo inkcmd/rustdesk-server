@@ -63,7 +63,9 @@ lazy_static::lazy_static! {
         std::fs::read_to_string("/opt/rustdesk/outgoing_allowlist.txt")
             .unwrap_or_default()
             .lines()
-            .map(|s| s.trim().to_owned())
+            .map(str::trim)
+            .filter(|s| !s.is_empty() && !s.starts_with('#'))
+            .map(str::to_owned)
             .collect()
     });
 }

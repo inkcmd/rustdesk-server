@@ -487,7 +487,7 @@ impl RendezvousServer {
                         ADDR2ID
     .write()
     .unwrap()
-    .insert(ip.clone(), id.clone());
+    .insert(ip_clone(), id_clone());
                     }
                     let mut msg_out = RendezvousMessage::new();
                     msg_out.set_register_pk_response(RegisterPkResponse {

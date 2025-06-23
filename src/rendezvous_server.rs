@@ -2,7 +2,6 @@
 use crate::common::*;
 use crate::peer::*;
 use std::collections::HashSet;
-use std::time::{Duration, Instant};
 use hbb_common::{
     allow_err, bail,
     bytes::{Bytes, BytesMut},

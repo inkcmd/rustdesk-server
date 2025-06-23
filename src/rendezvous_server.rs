@@ -448,11 +448,13 @@ impl RendezvousServer {
                         }
                     }
                     if changed {
+                            let id_clone = id.clone();
+    let ip_clone = ip.clone();
                         self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
-                        ADDR2ID
-    .write()
-    .unwrap()
-    .insert(ip, id);
+    ADDR2ID
+        .write()
+        .unwrap()
+        .insert(ip_clone, id_clone);
                     }
                     let mut msg_out = RendezvousMessage::new();
                     msg_out.set_register_pk_response(RegisterPkResponse {

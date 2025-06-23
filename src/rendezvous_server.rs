@@ -1,7 +1,6 @@
 // wdawd
 use crate::common::*;
 use crate::peer::*;
-use std::collections::HashSet;
 use hbb_common::{
     allow_err, bail,
     bytes::{Bytes, BytesMut},
@@ -29,7 +28,6 @@ use std::{
         atomic::{AtomicBool, AtomicUsize, Ordering},
         Arc, RwLock,
     },
-    time::{Duration, Instant},
 };
 use hex;
 

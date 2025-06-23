@@ -482,6 +482,10 @@ impl RendezvousServer {
                     }
                     if changed {
                         self.pm.update_pk(id, peer, addr, rk.uuid, rk.pk, ip).await;
+                        ADDR2ID
+    .write()
+    .unwrap()
+    .insert(ip.clone(), id.clone());
                     }
                     let mut msg_out = RendezvousMessage::new();
                     msg_out.set_register_pk_response(RegisterPkResponse {
@@ -742,6 +746,14 @@ if let Some(initiator) = initiator_id_opt {
         if let Some(old) = ip_change {
             log::info!("IP change of {} from {} to {}", id, old, socket_addr);
         }
+            /* ---------- ВСТАВКА ---------- */
+    // обновляем карту «IP → ID», чтобы последующие Punch-Hole/Relay-запросы
+    // сразу знали инициатора
+    ADDR2ID
+        .write()
+        .unwrap()
+        .insert(socket_addr.ip().to_string(), id.clone());
+    /* -------- конец вставки ------- */
         let mut msg_out = RendezvousMessage::new();
         msg_out.set_register_peer_response(RegisterPeerResponse {
             request_pk,

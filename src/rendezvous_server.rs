@@ -54,15 +54,30 @@ lazy_static::lazy_static! {
 
 
 lazy_static::lazy_static! {
-    static ref ALLOWLIST: RwLock<HashSet<String>> = RwLock::new({
-        std::fs::read_to_string("/opt/rustdesk/outgoing_allowlist.txt")
-            .unwrap_or_default()
-            .lines()
-            .map(str::trim)
-            .filter(|s| !s.is_empty() && !s.starts_with('#'))
-            .map(str::to_owned)
-            .collect()
-    });
+static ref ALLOWLIST: RwLock<HashSet<String>> = RwLock::new({
+    std::fs::read_to_string("/opt/rustdesk/outgoing_allowlist.txt")
+        .unwrap_or_default()
+        .lines()
+        .filter_map(|line| {
+            // обрезаем пробелы слева/справа
+            let mut s = line.trim();
+            // если строка начинается с '#', пропускаем
+            if s.starts_with('#') || s.is_empty() {
+                return None;
+            }
+            // берём токен до первого пробела или символа '#'
+            if let Some(pos) = s.find(|c: char| c.is_whitespace() || c == '#') {
+                s = &s[..pos];
+            }
+            if s.is_empty() {
+                None
+            } else {
+                Some(s.to_owned())
+            }
+        })
+        .collect()
+});
+
 }
 
 #[derive(Clone, Debug)]

@@ -1,6 +1,7 @@
 // wdawd
 use crate::common::*;
 use crate::peer::*;
+use std::time::Instant;
 use hbb_common::{
     allow_err, bail,
     bytes::{Bytes, BytesMut},
@@ -37,13 +38,14 @@ lazy_static::lazy_static! {
 }
 /// true, если запись существовала и ещё действительна; запись сразу удаляется
 fn consume_allow_once(id: &str) -> bool {
-    let mut map = ALLOW_ONCE.write().unwrap();
+    // ⇓ явно даём понять, что берём метод RwLock::write
+    let mut map = std::sync::RwLock::write(&ALLOW_ONCE).unwrap();
     if let Some(exp) = map.remove(id) {
         if Instant::now() <= exp {
-            return true;               // пускаем
+            return true;
         }
     }
-    false                                // нет или уже просрочено
+    false
 }
 
 lazy_static::lazy_static! {
@@ -1133,34 +1135,43 @@ if let Some(init_id) = initiator_opt {
                     }
                 }
             }
-            Some("allow-once" | "ao") => {
+/* ----------------  check_cmd  ---------------- */
+Some("allow-once" | "ao") => {
     if let Some(id) = fds.next() {
-        let mins = fds.next().and_then(|s| s.parse::<u64>().ok()).unwrap_or(2);
+        let mins = fds
+            .next()
+            .and_then(|s| s.parse::<u64>().ok())
+            .unwrap_or(2);
         let expiry = Instant::now() + Duration::from_secs(mins * 60);
-        ALLOW_ONCE.write().unwrap().insert(id.to_owned(), expiry);
+        // ⇓ то же: явно метод RwLock::write
+        std::sync::RwLock::write(&ALLOW_ONCE).unwrap().insert(id.to_owned(), expiry);
+
         let _ = writeln!(res, "{id} allowed for {mins} min");
     }
-}
-                /* ────────── горячая перезагрузка allow-list ────────── */
-    Some("reload-allowlist" | "ral") => {
-        // перечитать файл
+},
+
+Some("reload-allowlist" | "ral") => {
     match std::fs::read_to_string("/opt/rustdesk/outgoing_allowlist.txt") {
         Ok(txt) => {
             let set: HashSet<String> = txt
                 .lines()
                 .map(str::trim)
-                .filter(|s| !s.is_empty() && !s.starts_with('#')) // <- фильтрация
+                .filter(|s| !s.is_empty() && !s.starts_with('#'))
                 .map(str::to_owned)
                 .collect();
-
             *ALLOWLIST.write().unwrap() = set;
-            writeln!(res, "Allowlist reloaded ({} entries)", ALLOWLIST.read().unwrap().len())?;
+            let _ = writeln!(
+                res,
+                "Allow-list reloaded ({} entries)",
+                ALLOWLIST.read().unwrap().len()
+            );
         }
         Err(e) => {
-            writeln!(res, "Error reading allowlist: {}", e)?;
+            let _ = writeln!(res, "Error reading allow-list: {e}");
         }
     }
-}
+},
+/* ------------------------------------------------ */
 Some("peers" | "list") => {
     use std::fmt::Write as _;
 

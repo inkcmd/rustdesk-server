@@ -1144,18 +1144,23 @@ if let Some(init_id) = initiator_opt {
                 /* ────────── горячая перезагрузка allow-list ────────── */
     Some("reload-allowlist" | "ral") => {
         // перечитать файл
-        let new_set: HashSet<String> = std::fs::read_to_string("/opt/rustdesk/outgoing_allowlist.txt")
-            .unwrap_or_default()
-            .lines()
-            .map(|s| s.trim().to_owned())
-            .collect();
+    match std::fs::read_to_string("/opt/rustdesk/outgoing_allowlist.txt") {
+        Ok(txt) => {
+            let set: HashSet<String> = txt
+                .lines()
+                .map(str::trim)
+                .filter(|s| !s.is_empty() && !s.starts_with('#')) // <- фильтрация
+                .map(str::to_owned)
+                .collect();
 
-        // заменить содержимое кэша
-        let mut lock = ALLOWLIST.write().unwrap();
-        *lock = new_set;
-
-        res = format!("allow-list reloaded: {} IDs\n", lock.len());
+            *ALLOWLIST.write().unwrap() = set;
+            writeln!(res, "Allowlist reloaded ({} entries)", ALLOWLIST.read().unwrap().len())?;
+        }
+        Err(e) => {
+            writeln!(res, "Error reading allowlist: {}", e)?;
+        }
     }
+}
 Some("peers" | "list") => {
     use std::fmt::Write as _;
 

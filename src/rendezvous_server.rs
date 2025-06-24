@@ -30,7 +30,6 @@ use std::{
         Arc, RwLock,
     },
 };
-use hex;
 
 lazy_static::lazy_static! {
     /// id  →  истекает в Instant
@@ -159,6 +158,29 @@ impl RendezvousServer {
                     .unwrap_or_default(),
             )
         };
+        /// Ищем ID по IP-адресу.
+///  • Сначала смотрим в кэше ADDR2ID  
+///  • Если нет ‒ пробегаем «горячие» peer’ы из памяти (`dump_all`)  
+///    и сразу кладём найденное в кэш.
+async fn id_by_ip(&self, ip: IpAddr) -> Option<String> {
+    // 1) быстрый кэш
+    if let Some(id) = ADDR2ID.read().unwrap().get(&ip.to_string()) {
+        return Some(id.clone());
+    }
+
+    // 2) просмотр всех пиров, которые уже в памяти
+    for (id, peer_arc) in self.pm.dump_all().await {
+        if peer_arc.read().await.socket_addr.ip() == ip {
+            // закэшируем и вернём
+            ADDR2ID
+                .write()
+                .unwrap()
+                .insert(ip.to_string(), id.clone());
+            return Some(id);
+        }
+    }
+    None
+}
         let mut rs = Self {
             tcp_punch: Arc::new(Mutex::new(HashMap::new())),
             pm,
@@ -578,16 +600,16 @@ let ip_key = addr.ip();
 let initiator_opt = self.id_by_ip(ip_key).await;
 
 // 2. Проверяем по ALLOWLIST *или* одноразовому allow-once
-if let Some(initiator) = initiator_id_opt {
+if let Some(init_id) = initiator_opt {
     let allowed = {
-        let list_ok   = ALLOWLIST.read().unwrap().contains(&initiator);
-        let once_ok   = consume_allow_once(&initiator);   // «съедает» запись
+        let list_ok   = ALLOWLIST.read().unwrap().contains(&init_id);
+        let once_ok   = consume_allow_once(&init_id);   // «съедает» запись
         list_ok || once_ok
     };
 
     if !allowed {
         log::warn!(
-            "Blocked outgoing connection: initiator {initiator} not allowed"
+            "Blocked outgoing connection: initiator {init_id} not allowed"
         );
         return true;                 // рвём TCP-сеанс
     }
@@ -804,8 +826,8 @@ ADDR2ID
     /* ---------- ВСТАВЛЯЕМ ЗДЕСЬ проверку ALLOW-LIST ---------- */
 
     // 1. определяем ID инициатора по IP-адресу
-    let ip_key = addr.ip().to_string();
-    let initiator_opt = ADDR2ID
+let ip_key = addr.ip();                      // IpAddr
+let initiator_opt = self.id_by_ip(ip_key).await;
         .read()
         .unwrap()
         .get(&ip_key)
@@ -1430,25 +1452,7 @@ Some("reload-allowlist" | "ral") => {
         }
         false
     }
-    /// попытка найти ID по IP среди пиров в памяти
-async fn id_by_ip(&self, ip: IpAddr) -> Option<String> {
-    // быстрая проверка по карте
-    if let Some(id) = ADDR2ID.read().unwrap().get(&ip.to_string()) {
-        return Some(id.clone());
-    }
-    // fallback: пробегаемся по PeerMap (обычно <-1000 элементов)
-    for (id, peer_arc) in self.pm.dump_in_memory().await {
-        if peer_arc.read().await.socket_addr.ip() == ip {
-            // сразу кэшируем, чтобы в следующий раз найти быстро
-            ADDR2ID
-                .write()
-                .unwrap()
-                .insert(ip.to_string(), id.clone());
-            return Some(id);
-        }
-    }
-    None
-}
+
 }
 
 async fn check_relay_servers(rs0: Arc<RelayServers>, tx: Sender) {

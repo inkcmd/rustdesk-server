@@ -574,12 +574,8 @@ ADDR2ID
                 }
                 Some(rendezvous_message::Union::RequestRelay(mut rf)) => {
     /* ---------- 1. определяем инициатора по IP ---------- */
-    let ip_key = addr.ip().to_string();
-    let initiator_id_opt = ADDR2ID
-        .read()
-        .unwrap()
-        .get(&ip_key)
-        .cloned();                   // Option<String>
+let ip_key = addr.ip();
+let initiator_opt = self.id_by_ip(ip_key).await;
 
 // 2. Проверяем по ALLOWLIST *или* одноразовому allow-once
 if let Some(initiator) = initiator_id_opt {
@@ -842,7 +838,7 @@ if let Some(init_id) = initiator_opt {
         return Ok((RendezvousMessage::new(), None));
     }
 } else {
-    log::warn!("PunchHole denied: unknown initiator {ip_key}");
+    log::warn!("PunchHole denied: unknown initiator {}", ip_key);
 
     let mut deny = RendezvousMessage::new();
     deny.set_punch_hole_response(PunchHoleResponse {
@@ -1434,6 +1430,25 @@ Some("reload-allowlist" | "ral") => {
         }
         false
     }
+    /// попытка найти ID по IP среди пиров в памяти
+async fn id_by_ip(&self, ip: IpAddr) -> Option<String> {
+    // быстрая проверка по карте
+    if let Some(id) = ADDR2ID.read().unwrap().get(&ip.to_string()) {
+        return Some(id.clone());
+    }
+    // fallback: пробегаемся по PeerMap (обычно <-1000 элементов)
+    for (id, peer_arc) in self.pm.dump_in_memory().await {
+        if peer_arc.read().await.socket_addr.ip() == ip {
+            // сразу кэшируем, чтобы в следующий раз найти быстро
+            ADDR2ID
+                .write()
+                .unwrap()
+                .insert(ip.to_string(), id.clone());
+            return Some(id);
+        }
+    }
+    None
+}
 }
 
 async fn check_relay_servers(rs0: Arc<RelayServers>, tx: Sender) {

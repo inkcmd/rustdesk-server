@@ -805,10 +805,6 @@ ADDR2ID
     // 1. определяем ID инициатора по IP-адресу
 let ip_key = addr.ip();                      // IpAddr
 let initiator_opt = self.id_by_ip(ip_key).await;
-        .read()
-        .unwrap()
-        .get(&ip_key)
-        .cloned();                     // Option<String>
 
 /* ---------- проверка инициатора ---------- */
 if let Some(init_id) = initiator_opt {

@@ -1126,8 +1126,8 @@ Some("reload-allowlist" | "ral") => {
         Ok(txt) => {
             let set: HashSet<String> = txt
                 .lines()
-                .map(str::trim)
-                .filter(|s| !s.is_empty() && !s.starts_with('#'))
+                .map(|s| s.split('#').next().unwrap().trim())   // ← режем по первой # и ещё раз trim
+                .filter(|s| !s.is_empty())
                 .map(str::to_owned)
                 .collect();
             *std::sync::RwLock::write(&*ALLOWLIST).unwrap() = set;

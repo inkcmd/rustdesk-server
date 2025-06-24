@@ -158,29 +158,6 @@ impl RendezvousServer {
                     .unwrap_or_default(),
             )
         };
-        /// Ищем ID по IP-адресу.
-///  • Сначала смотрим в кэше ADDR2ID  
-///  • Если нет ‒ пробегаем «горячие» peer’ы из памяти (`dump_all`)  
-///    и сразу кладём найденное в кэш.
-async fn id_by_ip(&self, ip: IpAddr) -> Option<String> {
-    // 1) быстрый кэш
-    if let Some(id) = ADDR2ID.read().unwrap().get(&ip.to_string()) {
-        return Some(id.clone());
-    }
-
-    // 2) просмотр всех пиров, которые уже в памяти
-    for (id, peer_arc) in self.pm.dump_all().await {
-        if peer_arc.read().await.socket_addr.ip() == ip {
-            // закэшируем и вернём
-            ADDR2ID
-                .write()
-                .unwrap()
-                .insert(ip.to_string(), id.clone());
-            return Some(id);
-        }
-    }
-    None
-}
         let mut rs = Self {
             tcp_punch: Arc::new(Mutex::new(HashMap::new())),
             pm,
@@ -1096,6 +1073,29 @@ if let Some(init_id) = initiator_opt {
         }
         let i = ROTATION_RELAY_SERVER.fetch_add(1, Ordering::SeqCst) % self.relay_servers.len();
         self.relay_servers[i].clone()
+    }
+    /// Ищем ID пир-клиента по его IP-адресу.
+    /// 1) смотрим в кэше ADDR2ID;
+    /// 2) если нет – просматриваем все «горячие» пиры из памяти
+    ///    и сразу кладём найденное значение в кэш.
+    async fn id_by_ip(&self, ip: IpAddr) -> Option<String> {
+        // — 1. быстрый кэш
+        if let Some(id) = ADDR2ID.read().unwrap().get(&ip.to_string()) {
+            return Some(id.clone());
+        }
+
+        // — 2. перебираем пиры, которые уже в памяти
+        for (id, peer_arc) in self.pm.dump_all().await {
+            if peer_arc.read().await.socket_addr.ip() == ip {
+                // запомним в кэше и вернём
+                ADDR2ID
+                    .write()
+                    .unwrap()
+                    .insert(ip.to_string(), id.clone());
+                return Some(id);
+            }
+        }
+        None
     }
 
     async fn check_cmd(&self, cmd: &str) -> String {
